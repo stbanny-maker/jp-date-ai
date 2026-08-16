@@ -392,44 +392,44 @@ def process_query(req: QueryRequest):
     candidates = None
     curr_year = datetime.now().year
     base_decade = (curr_year // 10) * 10
-
+    
     # ---------------- 核心算法分支 ----------------
 
-    # 分支 1: DHC 体系 (支持 GL1 双字母体系 以及 F6 月份字母+年份数字体系)
-    if brand_id == "dhc" or decode_type == "letter_month_digit_year" or decode_type == "dhc_standard":
-        match_letter_digit = re.match(r"^([A-Za-z])(\d)[A-Za-z0-9]*$", batch)
+    # 分支 1: DHC 体系 (标准：首位字母为年份，次位为月份数字或跳I字母)
+    if brand_id == "dhc" or decode_type == "dhc_standard":
+        # DHC 年份基准轮替表
+        dhc_year_map = {
+            "A": 2019, "B": 2020, "C": 2021, "D": 2022, 
+            "E": 2023, "F": 2024, "G": 2025, "H": 2026, 
+            "J": 2027, "K": 2028, "L": 2029, "M": 2030
+        }
+        # DHC 双字母月份表 (标准跳过 I: A-H 为 1-8月, J-M 为 9-12月)
+        dhc_month_letter_map = {
+            "A": 1, "B": 2, "C": 3, "D": 4, "E": 5, "F": 6,
+            "G": 7, "H": 8, "J": 9, "K": 10, "L": 11, "M": 12
+        }
+
+        match_letter_digit = re.match(r"^([A-Za-z])(\d{1,2})[A-Za-z0-9]*$", batch)
         match_double_letter = re.match(r"^([A-Za-z])([A-Za-z])[A-Za-z0-9]*$", batch)
-        
-        # 模式 A: 首字母月份 + 次位年份数字 (如 F6 -> 6月, 6年)
+
+        # 模式 A: 首字母年份 + 数字月份 (如 F6 -> F=2024年, 6=06月)
         if match_letter_digit:
-            m_char = match_letter_digit.group(1).upper()
-            y_char = int(match_letter_digit.group(2))
-            month_letters = "ABCDEFGHJKLMNPQRSTUVWXY"
-            if m_char in month_letters:
-                month = month_letters.index(m_char) + 1
-                y = base_decade + y_char
-                # 若算出的年份大于当前年，或刚好等于当前年份但月份明显超前，取上一轮10年
-                if y > curr_year:
-                    y -= 10
-                prod_date = f"{y}-{month:02d}"
-                
-        # 模式 B: 双字母开头 (如 GL1 -> 首位年字母 G=2026/2016，次位月字母 L=12月 或 A-L对应1-12月)
+            y_char = match_letter_digit.group(1).upper()
+            m_num = int(match_letter_digit.group(2))
+            
+            if y_char in dhc_year_map and 1 <= m_num <= 12:
+                year = dhc_year_map[y_char]
+                prod_date = f"{year}-{m_num:02d}"
+
+        # 模式 B: 双字母编码 (如 GL1 -> G=2025年, L=11月)
         elif match_double_letter:
-            c1 = match_double_letter.group(1).upper()
-            c2 = match_double_letter.group(2).upper()
+            y_char = match_double_letter.group(1).upper()
+            m_char = match_double_letter.group(2).upper()
             
-            # 年份轮替字母: A=2020, B=2021, C=2022, D=2023, E=2024, F=2025, G=2026
-            year_map = {"A":2020, "B":2021, "C":2022, "D":2023, "E":2024, "F":2025, "G":2026, "H":2027, "J":2028, "K":2029}
-            month_letters = "ABCDEFGHJKLMN"
-            
-            if c1 in year_map and c2 in month_letters:
-                year = year_map[c1]
-                month = month_letters.index(c2) + 1
+            if y_char in dhc_year_map and m_char in dhc_month_letter_map:
+                year = dhc_year_map[y_char]
+                month = dhc_month_letter_map[m_char]
                 prod_date = f"{year}-{month:02d}"
-            elif c1 in month_letters and c2 in month_letters:
-                # 次位可能为年份缩写
-                month = month_letters.index(c1) + 1
-                prod_date = f"{curr_year}-{month:02d}"
 
     # 分支 2: 高丝 / 奥尔滨 / 黛珂体系 (首位年字母 + 次位月份)
     elif decode_type == "japanese_letter_year_month" or brand_id in ["kose", "albion", "decorte"]:
