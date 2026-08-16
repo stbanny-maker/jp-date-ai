@@ -385,27 +385,32 @@ def process_query(req: QueryRequest):
     base_decade = (curr_year // 10) * 10
 
     # =========================================================================
-    # [独立插槽]: Kracie / 葵缇亚 / 肌美精 (Hadabisei 5位混编码体系)
+    # [独立插槽]: Kracie / 葵缇亚 / 肌美精 (校准真实流通批次)
     # =========================================================================
     if not prod_date and (brand_id in ["kracie", "hadabisei"] or "KRACIE" in brand_name.upper() or "肌美精" in brand_name or "葵缇亚" in brand_name):
         rule_name = "Kracie 葵缇亚/肌美精标准批号"
         
-        # 5位混编码 (如 71BH2 -> 首位年 7, 次位月 1)
-        match_kracie = re.match(r"^(\d)([0-9A-Za-z])[A-Za-z0-9]*$", batch)
+        # 匹配 5位混编码 (如 71BH2 或 7B01)
+        match_kracie = re.match(r"^([A-Za-z0-9])([A-Za-z0-9])[A-Za-z0-9]*$", batch)
         if match_kracie:
-            y_char = int(match_kracie.group(1))
-            m_raw = match_kracie.group(2).upper()
+            c1 = match_kracie.group(1).upper()
+            c2 = match_kracie.group(2).upper()
             
-            month_map_kracie = {
+            # 年份对应表 (结合当前流通批次校准)
+            kracie_year_map = {
+                "5": 2023, "6": 2024, "7": 2025, "8": 2026, "9": 2027, "0": 2028,
+                "E": 2023, "F": 2024, "G": 2025, "H": 2026, "J": 2027
+            }
+            # 月份对应表 (支持数字 1-12 及 字母 A-L)
+            kracie_month_map = {
                 "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,
-                "A": 10, "B": 11, "C": 12, "X": 10, "Y": 11, "Z": 12
+                "A": 1, "B": 2, "C": 3, "D": 4, "E": 5, "F": 6, "G": 7, "H": 8, "I": 9, "J": 10, "K": 11, "L": 12,
+                "X": 10, "Y": 11, "Z": 12
             }
             
-            month = month_map_kracie.get(m_raw, 1)
-            y = base_decade + y_char
-            if y > curr_year:
-                y -= 10
-            prod_date = f"{y}-{month:02d}"
+            year = kracie_year_map.get(c1, 2025)
+            month = kracie_month_map.get(c2, 1)
+            prod_date = f"{year}-{month:02d}"
 
 
     # =========================================================================
