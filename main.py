@@ -385,37 +385,31 @@ def process_query(req: QueryRequest):
     base_decade = (curr_year // 10) * 10
 
     # =========================================================================
-    # [LOSHI / 日本马油 精准校准分支 - 100% 精确到日]
+    # [LOSHI / 日本马油 - 纯动态数学推算分支]
     # =========================================================================
     if brand_id in ["loshi", "horse_oil", "cosmetec"] or "LOSHI" in brand_name.upper() or "马油" in brand_name:
         rule_name = "LOSHI 产线标准儒略日体系"
         
-        # 1. 模式 A: 5位倒序儒略日 (如 2585B -> 258天=09月15日 + 5代表2025年)
+        # 模式 A: 5位倒序儒略日 (如 2585B -> 前3位天数 258, 第4位年份 5)
         match_loshi_5 = re.match(r"^(\d{3})(\d)[A-Za-z]?$", batch)
-        
-        # 2. 模式 B: 7位复合码 (如 323501W)
-        match_loshi_7 = re.match(r"^(\d{2})(\d{3})[A-Za-z0-9]+$", batch)
+        # 模式 B: 6-8位复合码 (如 323501W -> 第1位车间, 第2-4位天数 235, 剩余为流水)
+        match_loshi_7 = re.match(r"^\d(\d{3})\d*[A-Za-z0-9]*$", batch)
 
         if match_loshi_5:
             days = int(match_loshi_5.group(1))
             y_char = int(match_loshi_5.group(2))
             if 1 <= days <= 366:
-                y = 2020 + y_char
-                if y > curr_year: y -= 10
+                y = base_decade + y_char
+                if y > curr_year:
+                    y -= 10
                 prod_date = (datetime(y, 1, 1) + timedelta(days=days - 1)).strftime("%Y-%m-%d")
 
         elif match_loshi_7:
-            # 针对 323501W 系列：判定为 2025 年 8 月产线批次
-            prefix = match_loshi_7.group(1)
-            # 若包含 235 (第235天 = 8月23日)
-            if "235" in batch:
-                prod_date = "2025-08-23"
-            else:
-                days = int(match_loshi_7.group(2))
-                if 1 <= days <= 366:
-                    prod_date = (datetime(2025, 1, 1) + timedelta(days=days - 1)).strftime("%Y-%m-%d")
-                else:
-                    prod_date = "2025-08-23"
+            days = int(match_loshi_7.group(1))
+            if 1 <= days <= 366:
+                # 动态选取最贴近当前年份的生产周期
+                y = curr_year if datetime.now().timetuple().tm_yday >= days else (curr_year - 1)
+                prod_date = (datetime(y, 1, 1) + timedelta(days=days - 1)).strftime("%Y-%m-%d")
 
 
     # =========================================================================
