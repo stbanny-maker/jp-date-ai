@@ -385,36 +385,27 @@ def process_query(req: QueryRequest):
     base_decade = (curr_year // 10) * 10
 
     # =========================================================================
-    # [独立插槽 1]: 大正制药 / Taisho (百保能等医药品体系)
+    # [独立插槽]: 大正制药 / Taisho (根据实物盒装校准)
     # =========================================================================
     if brand_id in ["taisho", "pabron"] or "大正" in brand_name or "TAISHO" in brand_name.upper():
         rule_name = "大正制药标准药品批号"
-        shelf_life = 36  # 日本OTC药品通常为3年保质期
+        shelf_life = 36  # 日本OTC药品严格36个月
         
-        # 模式 A: 5位码 (如 015X1 -> 01工厂, 5=2025年, X=10月)
+        # 5位药品流水码 (如 045N1, 015X1)
         match_taisho_5 = re.match(r"^\d{2}(\d)([A-Za-z])\d*$", batch)
-        # 模式 B: 首位年数字 + 次位月字母 (如 5A01 -> 2025年1月)
-        match_taisho_std = re.match(r"^(\d)([A-Za-z])\d*$", batch)
 
-        month_map_pharm = {
-            "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,
-            "A": 1, "B": 2, "C": 3, "D": 4, "E": 5, "F": 6, "G": 7, "H": 8, "I": 9, "J": 10, "K": 11, "L": 12,
-            "X": 10, "Y": 11, "Z": 12
+        # 实物校准的大正医药月份字母表
+        # N=1月, P=2月, Q=3月, R/S=4月, T=5月, X=6月, A=7月, B=8月, C=9月, D=10月, E=11月, F=12月
+        month_map_taisho = {
+            "N": 1, "P": 2, "Q": 3, "R": 4, "S": 4, "T": 5, "X": 6,
+            "A": 7, "B": 8, "C": 9, "D": 10, "E": 11, "F": 12,
+            "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "Y": 11, "Z": 12
         }
 
         if match_taisho_5:
             y_char = int(match_taisho_5.group(1))
             m_char = match_taisho_5.group(2).upper()
-            month = month_map_pharm.get(m_char)
-            if month:
-                y = base_decade + y_char
-                if y > curr_year: y -= 10
-                prod_date = f"{y}-{month:02d}"
-
-        elif match_taisho_std:
-            y_char = int(match_taisho_std.group(1))
-            m_char = match_taisho_std.group(2).upper()
-            month = month_map_pharm.get(m_char)
+            month = month_map_taisho.get(m_char)
             if month:
                 y = base_decade + y_char
                 if y > curr_year: y -= 10
