@@ -385,27 +385,27 @@ def process_query(req: QueryRequest):
     base_decade = (curr_year // 10) * 10
 
     # =========================================================================
-    # [新增独立分支]: LOSHI / 日本北海道马油 (Cosmetec Japan 体系)
+    # [LOSHI / 日本马油 精准校准分支]
     # =========================================================================
     if brand_id in ["loshi", "horse_oil", "cosmetec"] or "LOSHI" in brand_name.upper() or "马油" in brand_name:
         rule_name = "LOSHI 产线标准儒略日体系"
         
-        # 模式 A: 倒序儒略日 (如 2585B / 2585 -> 258天 + 5代表2025年)
-        match_loshi_rev = re.match(r"^(\d{3})(\d)[A-Za-z]?$", batch)
-        # 模式 B: 正序组合码 (如 323501W -> 3代表2023年 + 235天)
-        match_loshi_seq = re.match(r"^(\d)(\d{3})[A-Za-z0-9]*$", batch)
+        # 模式 A: 5位倒序儒略日 (如 2585B -> 258天 + 5代表2025年 + B产线)
+        match_loshi_5 = re.match(r"^(\d{3})(\d)[A-Za-z]?$", batch)
+        # 模式 B: 7位/8位复合码 (如 323501W -> 前缀3 + 235天 + 5代表2025年 + 01W流水)
+        match_loshi_7 = re.match(r"^\d(\d{3})(\d)[A-Za-z0-9]+$", batch)
 
-        if match_loshi_rev:
-            days = int(match_loshi_rev.group(1))
-            y_char = int(match_loshi_rev.group(2))
+        if match_loshi_5:
+            days = int(match_loshi_5.group(1))
+            y_char = int(match_loshi_5.group(2))
             if 1 <= days <= 366:
                 y = base_decade + y_char
                 if y > curr_year: y -= 10
                 prod_date = (datetime(y, 1, 1) + timedelta(days=days - 1)).strftime("%Y-%m-%d")
 
-        elif match_loshi_seq:
-            y_char = int(match_loshi_seq.group(1))
-            days = int(match_loshi_seq.group(2))
+        elif match_loshi_7:
+            days = int(match_loshi_7.group(1))
+            y_char = int(match_loshi_7.group(2))
             if 1 <= days <= 366:
                 y = base_decade + y_char
                 if y > curr_year: y -= 10
