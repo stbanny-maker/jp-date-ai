@@ -364,136 +364,118 @@ load_data_from_disk()
 def get_brands():
     load_data_from_disk()
     return BRANDS_DATA
-
+    
 @app.post("/api/query")
 def process_query(req: QueryRequest):
     if not BRANDS_DATA or not RULES_DATA:
         load_data_from_disk()
 
     batch = req.batch_code.strip().upper()
-    brand_id = req.brand_id
+    brand_id = req.brand_id.lower()
 
     brand_info = next((b for b in BRANDS_DATA if b["id"] == brand_id), None)
-    if not brand_info:
-        return {"confidence": "E", "source": "错误", "rule_name": "未知品牌", "production_date": None}
+    brand_name = brand_info["name"] if brand_info else brand_id
 
-    # 1. 匹配规则库中的规则
-    matched_rule = None
-    for rule in RULES_DATA:
-        if rule.get("brand_id") == brand_id:
-            pat = rule.get("pattern", ".*")
-            if re.match(pat, batch):
-                matched_rule = rule
-                if rule.get("verified", False):
-                    break
-
-    decode_type = matched_rule.get("decode_type") if matched_rule else None
     prod_date = None
-    candidates = None
+    confidence = "A"
+    source = "集团官方产线标准"
+    rule_name = "标准工业批号解析"
+
     curr_year = datetime.now().year
     base_decade = (curr_year // 10) * 10
-    
-    # ---------------- 核心算法分支 ----------------
 
-    # 分支 1: DHC 体系 (标准：首位字母为年份，次位为月份数字或跳I字母)
-    if brand_id == "dhc" or decode_type == "dhc_standard":
-        # DHC 年份基准轮替表
-        dhc_year_map = {
-            "A": 2019, "B": 2020, "C": 2021, "D": 2022, 
-            "E": 2023, "F": 2024, "G": 2025, "H": 2026, 
-            "J": 2027, "K": 2028, "L": 2029, "M": 2030
-        }
-        # DHC 双字母月份表 (标准跳过 I: A-H 为 1-8月, J-M 为 9-12月)
-        dhc_month_letter_map = {
-            "A": 1, "B": 2, "C": 3, "D": 4, "E": 5, "F": 6,
-            "G": 7, "H": 8, "J": 9, "K": 10, "L": 11, "M": 12
-        }
+    # =========================================================================
+    # 1. 花王集团体系 (KAO / Bioré碧柔 / Curél珂润 / Sofina苏菲娜 / 8x4 / Kanebo / KATE)
+    # =========================================================================
+    kao_group = ["kao", "biore", "curel", "sofina", "8x4", "kanebo", "kate", "freeplus", "est"]
+    if brand_id in kao_group or "花王" in brand_name or "碧柔" in brand_name or "珂润" in brand_name or "苏菲娜" in brand_name:
+        rule_name = "花王集团产线标准"
+        
+        # 模式 A: 8位复合码 (如 B0002945 -> 尾部 294 是第294天, 5 是 2025年)
+        match_kao_8 = re.match(r"^[A-Z0-9]{3,4}(\d{3})(\d)$", batch)
+        # 模式 B: 4位倒序儒略日 (如 2945 -> 294天 + 2025年)
+        match_kao_4_rev = re.match(r"^(\d{3})(\d)$", batch)
+        # 模式 C: 4位正序儒略日 (如 5294 -> 2025年 + 294天)
+        match_kao_4_seq = re.match(r"^(\d)(\d{3})[A-Z0-9]*$", batch)
 
-        match_letter_digit = re.match(r"^([A-Za-z])(\d{1,2})[A-Za-z0-9]*$", batch)
-        match_double_letter = re.match(r"^([A-Za-z])([A-Za-z])[A-Za-z0-9]*$", batch)
+        if match_kao_8:
+            days = int(match_kao_8.group(1))
+            y_char = int(match_kao_8.group(2))
+            if 1 <= days <= 366:
+                y = base_decade + y_char
+                if y > curr_year: y -= 10
+                prod_date = (datetime(y, 1, 1) + timedelta(days=days - 1)).strftime("%Y-%m-%d")
+        elif match_kao_4_rev and 1 <= int(match_kao_4_rev.group(1)) <= 366:
+            days = int(match_kao_4_rev.group(1))
+            y_char = int(match_kao_4_rev.group(2))
+            y = base_decade + y_char
+            if y > curr_year: y -= 10
+            prod_date = (datetime(y, 1, 1) + timedelta(days=days - 1)).strftime("%Y-%m-%d")
+        elif match_kao_4_seq and 1 <= int(match_kao_4_seq.group(2)) <= 366:
+            y = base_decade + int(match_kao_4_seq.group(1))
+            if y > curr_year: y -= 10
+            days = int(match_kao_4_seq.group(2))
+            prod_date = (datetime(y, 1, 1) + timedelta(days=days - 1)).strftime("%Y-%m-%d")
 
-        # 模式 A: 首字母年份 + 数字月份 (如 F6 -> F=2024年, 6=06月)
-        if match_letter_digit:
-            y_char = match_letter_digit.group(1).upper()
-            m_num = int(match_letter_digit.group(2))
-            
-            if y_char in dhc_year_map and 1 <= m_num <= 12:
-                year = dhc_year_map[y_char]
-                prod_date = f"{year}-{m_num:02d}"
-
-        # 模式 B: 双字母编码 (如 GL1 -> G=2025年, L=11月)
-        elif match_double_letter:
-            y_char = match_double_letter.group(1).upper()
-            m_char = match_double_letter.group(2).upper()
-            
-            if y_char in dhc_year_map and m_char in dhc_month_letter_map:
-                year = dhc_year_map[y_char]
-                month = dhc_month_letter_map[m_char]
-                prod_date = f"{year}-{month:02d}"
-
-    # 分支 2: 高丝 / 奥尔滨 / 黛珂体系 (首位年字母 + 次位月份)
-    elif decode_type == "japanese_letter_year_month" or brand_id in ["kose", "albion", "decorte"]:
-        match = re.match(r"^([A-Za-z])([A-Za-z0-9])[A-Za-z0-9]*$", batch)
-        if match:
-            y_char = match.group(1).upper()
-            m_char = match.group(2).upper()
-            year_map = matched_rule.get("year_mapping", {
-                "A":2020, "B":2021, "C":2022, "D":2023, "E":2024, "F":2025, "G":2026, "H":2027, "J":2028, "K":2029
-            }) if matched_rule else {"C":2022, "D":2023, "E":2024, "F":2025, "G":2026}
-            month_map = {"A":1,"B":2,"C":3,"D":4,"E":5,"F":6,"G":7,"H":8,"I":9,"J":10,"K":11,"L":12}
-            
-            month = int(m_char) if m_char.isdigit() and 1 <= int(m_char) <= 12 else month_map.get(m_char)
-            if y_char in year_map and month:
-                prod_date = f"{year_map[y_char]}-{month:02d}"
-
-    # 分支 3: 儒略日 YDDD (资生堂 / 花王 / SK-II / 8X4)
-    elif decode_type == "julian_date_yddd" or (len(batch) >= 4 and batch[:4].isdigit() and brand_id in ["shiseido", "kao", "sk-ii", "8x4"]):
+    # =========================================================================
+    # 2. 资生堂集团体系 (SHISEIDO / CPB / 怡丽丝尔 / 安耐晒 / IPSA / 欧珀莱 / NARS)
+    # =========================================================================
+    shiseido_group = ["shiseido", "cpb", "elixir", "anessa", "ipsa", "aupres", "nars", "uno", "senka"]
+    if not prod_date and (brand_id in shiseido_group or "资生堂" in brand_name or "安耐晒" in brand_name or "怡丽丝尔" in brand_name):
+        rule_name = "资生堂集团儒略日标准"
         match = re.match(r"^(\d)(\d{3})[A-Za-z0-9]*$", batch)
         if match:
             y_char = int(match.group(1))
             days = int(match.group(2))
             if 1 <= days <= 366:
                 y = base_decade + y_char
-                if y > curr_year:
-                    y -= 10
-                try:
-                    target_date = datetime(y, 1, 1) + timedelta(days=days - 1)
-                    prod_date = target_date.strftime("%Y-%m-%d")
-                except Exception:
-                    prod_date = f"{y}年"
-
-    # 分支 4: 近江兄弟 (OMI Brotherhood)
-    elif decode_type == "omi_standard" or brand_id == "omi":
-        match_letter = re.match(r"^([A-Za-z])([A-Za-z])[A-Za-z0-9]*$", batch)
-        match_digit = re.match(r"^(\d)(\d{3})[A-Za-z0-9]*$", batch)
-        if match_letter:
-            y_char = match_letter.group(1).upper()
-            m_char = match_letter.group(2).upper()
-            year_map = {"A":2024, "B":2025, "C":2026, "D":2027, "E":2028}
-            month_map = {"A":1,"B":2,"C":3,"D":4,"E":5,"F":6,"G":7,"H":8,"I":9,"J":10,"K":11,"L":12}
-            if y_char in year_map and m_char in month_map:
-                prod_date = f"{year_map[y_char]}-{month_map[m_char]:02d}"
-        elif match_digit:
-            y = base_decade + int(match_digit.group(1))
-            if y > curr_year: y -= 10
-            days = int(match_digit.group(2))
-            if 1 <= days <= 366:
+                if y > curr_year: y -= 10
                 prod_date = (datetime(y, 1, 1) + timedelta(days=days - 1)).strftime("%Y-%m-%d")
 
-    # 分支 5: 直标年月日 (FANCL / HABA)
-    elif decode_type == "direct_date_ymd" or brand_id in ["fancl", "haba"]:
-        match = re.match(r"^(\d{4}|\d{2})[.\-_]?(\d{2})[.\-_]?(\d{2})", batch)
+    # =========================================================================
+    # 3. 高丝/奥尔滨体系 (KOSÉ / DECORTÉ黛珂 / ALBION奥尔滨 / 雪肌精)
+    # =========================================================================
+    kose_group = ["kose", "decorte", "albion", "sekkisei", "fasio"]
+    if not prod_date and (brand_id in kose_group or "高丝" in brand_name or "黛珂" in brand_name or "奥尔滨" in brand_name):
+        rule_name = "高丝集团字母轮替体系"
+        match = re.match(r"^([A-Za-z])([A-Za-z0-9])[A-Za-z0-9]*$", batch)
         if match:
-            y_str, m_str, d_str = match.group(1), match.group(2), match.group(3)
-            y = int(y_str) if len(y_str) == 4 else 2000 + int(y_str)
-            m, d = int(m_str), int(d_str)
-            try:
-                prod_date = datetime(y, m, d).strftime("%Y-%m-%d")
-            except Exception:
-                pass
+            y_char = match.group(1).upper()
+            m_char = match.group(2).upper()
+            year_map = {"A":2020, "B":2021, "C":2022, "D":2023, "E":2024, "F":2025, "G":2026, "H":2027, "J":2028, "K":2029}
+            month_map = {"A":1,"B":2,"C":3,"D":4,"E":5,"F":6,"G":7,"H":8,"I":9,"J":10,"K":11,"L":12}
+            month = int(m_char) if m_char.isdigit() and 1 <= int(m_char) <= 12 else month_map.get(m_char)
+            if y_char in year_map and month:
+                prod_date = f"{year_map[y_char]}-{month:02d}"
 
-    # 分支 6: 雅诗兰黛 3位码 (A53)
-    elif decode_type == "estee_lauder_3_digit" or brand_id in ["estee_lauder", "clinique", "mac", "lamer", "origins"]:
+    # =========================================================================
+    # 4. DHC 体系 (支持 F6 与 GL1 等双模式)
+    # =========================================================================
+    if not prod_date and (brand_id == "dhc" or "蝶翠诗" in brand_name or "DHC" in brand_name):
+        rule_name = "DHC官方产线体系"
+        dhc_year_map = {"A":2019, "B":2020, "C":2021, "D":2022, "E":2023, "F":2024, "G":2025, "H":2026, "J":2027, "K":2028, "L":2029}
+        dhc_month_letter_map = {"A":1, "B":2, "C":3, "D":4, "E":5, "F":6, "G":7, "H":8, "J":9, "K":10, "L":11, "M":12}
+
+        match_letter_digit = re.match(r"^([A-Za-z])(\d{1,2})[A-Za-z0-9]*$", batch)
+        match_double_letter = re.match(r"^([A-Za-z])([A-Za-z])[A-Za-z0-9]*$", batch)
+
+        if match_letter_digit:
+            y_char = match_letter_digit.group(1).upper()
+            m_num = int(match_letter_digit.group(2))
+            if y_char in dhc_year_map and 1 <= m_num <= 12:
+                prod_date = f"{dhc_year_map[y_char]}-{m_num:02d}"
+        elif match_double_letter:
+            y_char = match_double_letter.group(1).upper()
+            m_char = match_double_letter.group(2).upper()
+            if y_char in dhc_year_map and m_char in dhc_month_letter_map:
+                prod_date = f"{dhc_year_map[y_char]}-{dhc_month_letter_map[m_char]:02d}"
+
+    # =========================================================================
+    # 5. 雅诗兰黛系 (雅诗兰黛 / 倩碧 / 海蓝之谜 / MAC / 悦木之源)
+    # =========================================================================
+    estee_group = ["estee_lauder", "clinique", "lamer", "mac", "origins", "bobbi_brown", "tom_ford", "jo_malone"]
+    if not prod_date and (brand_id in estee_group or "雅诗兰黛" in brand_name or "海蓝之谜" in brand_name):
+        rule_name = "雅诗兰黛集团3位码"
         match = re.match(r"^[A-Za-z0-9]([A-Za-z0-9])(\d)$", batch)
         if match:
             m_char = match.group(1).upper()
@@ -505,60 +487,24 @@ def process_query(req: QueryRequest):
                 if y > curr_year: y -= 10
                 prod_date = f"{y}-{month:02d}"
 
-    # 分支 7: LVMH 体系 (迪奥/娇兰/纪梵希)
-    elif decode_type == "lvmh_4digit" or brand_id in ["dior", "guerlain", "givenchy", "fresh"]:
-        match = re.match(r"^(\d)([A-Za-z])(\d{2})?", batch)
-        if match:
-            y_char = int(match.group(1))
-            m_char = match.group(2).upper()
-            day_str = match.group(3)
-            lvmh_months = "ABCDEFGHJKLMN"
-            if m_char in lvmh_months:
-                month = lvmh_months.index(m_char) + 1
-                y = base_decade + y_char
-                if y > curr_year: y -= 10
-                if day_str and 1 <= int(day_str) <= 31:
-                    prod_date = f"{y}-{month:02d}-{int(day_str):02d}"
-                else:
-                    prod_date = f"{y}-{month:02d}"
+    # =========================================================================
+    # 6. 直标年月日兜底 (FANCL / HABA / 进口直标等)
+    # =========================================================================
+    if not prod_date:
+        match_ymd = re.match(r"^(\d{4}|\d{2})[.\-_/]?(\d{2})[.\-_/]?(\d{2})$", batch)
+        if match_ymd:
+            y_str, m_str, d_str = match_ymd.group(1), match_ymd.group(2), match_ymd.group(3)
+            y = int(y_str) if len(y_str) == 4 else 2000 + int(y_str)
+            m, d = int(m_str), int(d_str)
+            if 2010 <= y <= curr_year + 1 and 1 <= m <= 12 and 1 <= d <= 31:
+                rule_name = "直标生产日期"
+                prod_date = f"{y}-{m:02d}-{d:02d}"
 
-    # 分支 8: Kissme / 井田体系 (如 7A1)
-    elif decode_type == "digit_year_letter_month" or brand_id in ["kissme", "canmake"]:
-        match = re.match(r"^(\d)([A-Za-z])[A-Za-z0-9]*$", batch)
-        if match:
-            y_char = int(match.group(1))
-            m_char = match.group(2).upper()
-            month_map = {"A":1,"B":2,"C":3,"D":4,"E":5,"F":6,"G":7,"H":8,"I":9,"J":10,"K":11,"L":12}
-            month = month_map.get(m_char)
-            if month:
-                y = base_decade + y_char
-                if y > curr_year: y -= 10
-                prod_date = f"{y}-{month:02d}"
-
-    # 分支 9: 嘉娜宝 / KATE 倒序儒略日 (如 2143 -> 第214天 2023年)
-    elif decode_type == "kanebo_reverse_julian" or brand_id in ["kanebo", "kate"]:
-        match = re.match(r"^(\d{3})(\d)$", batch)
-        if match:
-            days = int(match.group(1))
-            y_char = int(match.group(2))
-            if 1 <= days <= 366:
-                y = base_decade + y_char
-                if y > curr_year: y -= 10
-                try:
-                    prod_date = (datetime(y, 1, 1) + timedelta(days=days - 1)).strftime("%Y-%m-%d")
-                except Exception:
-                    pass
-
-    # 分支 10: 娇韵诗 / 希思黎 (6位码 如 230501)
-    elif decode_type == "clarins_6digit" or (len(batch) == 6 and batch.isdigit() and brand_id in ["clarins", "sisley"]):
-        y_part = int(batch[:2])
-        m_part = int(batch[2:4])
-        if 1 <= m_part <= 12:
-            prod_date = f"{2000 + y_part}-{m_part:02d}"
-
-    # 自动推算参考保质期 (未开封默认 36 个月)
+    # =========================================================================
+    # 计算到期日期 (未开封默认 36 个月)
+    # =========================================================================
     exp_date = None
-    shelf_life = matched_rule.get("shelf_life_months", 36) if matched_rule else 36
+    shelf_life = 36
     if prod_date and "-" in prod_date:
         try:
             parts = prod_date.split("-")
@@ -576,7 +522,7 @@ def process_query(req: QueryRequest):
     if not prod_date:
         return {
             "success": True,
-            "brand_name": brand_info["name"],
+            "brand_name": brand_name,
             "original_batch": req.batch_code,
             "normalized_batch": batch,
             "production_date": None,
@@ -589,17 +535,17 @@ def process_query(req: QueryRequest):
 
     return {
         "success": True,
-        "brand_name": brand_info["name"],
+        "brand_name": brand_name,
         "original_batch": req.batch_code,
         "normalized_batch": batch,
         "production_date": prod_date,
-        "candidate_dates": candidates,
+        "candidate_dates": None,
         "expiry_date": exp_date,
-        "rule_name": matched_rule.get("name", "产线标准批号解析") if matched_rule else "标准编码规则",
-        "confidence": "A",
-        "source": matched_rule.get("source", "官方/专柜交叉验证") if matched_rule else "品牌产线标准"
+        "rule_name": rule_name,
+        "confidence": confidence,
+        "source": source
     }
-
+        
 # 挂载静态资源
 static_dir = os.path.join(BASE_DIR, "static")
 if os.path.exists(static_dir):
