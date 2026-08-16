@@ -107,7 +107,7 @@ CSS_STYLE = """
     --radius-lg: 20px;
     --radius-md: 12px;
 }
-* { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, sans-serif; }
+* { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 body { margin: 0; padding: 0; background-color: var(--bg-color); color: var(--text-main); padding-bottom: 80px; }
 html { display: flex; justify-content: center; }
 body { width: 100%; max-width: 500px; min-height: 100vh; position: relative; background: var(--bg-color); }
@@ -182,7 +182,11 @@ if (trialCard) {
 
 renderHistory();
 
-fetch('/api/brands').then(r => r.json()).then(data => { brandsData = data; renderBrandList(data); });
+// 加载品牌数据（增加时间戳防止浏览器缓存）
+fetch('/api/brands?t=' + new Date().getTime()).then(r => r.json()).then(data => { 
+    brandsData = data; 
+    renderBrandList(data); 
+});
 
 function openBrandModal() { document.getElementById('brand-modal').style.display = 'flex'; }
 function closeBrandModal() { document.getElementById('brand-modal').style.display = 'none'; }
@@ -311,38 +315,6 @@ if ('serviceWorker' in navigator) {
 }
 """
 
-JSON_BRANDS_DEFAULT = """[
-    {"id": "dhc", "name": "DHC 蝶翠诗", "category": "化妆品", "aliases": ["dhc", "蝶翠诗"]},
-    {"id": "shiseido", "name": "SHISEIDO / 资生堂", "category": "化妆品", "aliases": ["shiseido", "资生堂", "資生堂"]},
-    {"id": "kose", "name": "KOSÉ / 高丝", "category": "化妆品", "aliases": ["kose", "高丝", "コーセー"]},
-    {"id": "kao", "name": "KAO / 花王", "category": "日用品", "aliases": ["kao", "花王"]},
-    {"id": "meiji", "name": "明治 Meiji", "category": "食品", "aliases": ["meiji", "明治"]}
-]"""
-
-JSON_RULES_DEFAULT = """[
-    {
-        "brand_id": "dhc",
-        "name": "字母月份 + 年份末位",
-        "pattern": "^([A-Za-z])(\\\\d)[A-Za-z0-9]*$",
-        "decode_type": "letter_month_digit_year",
-        "month_letters": "ABCDEFGHJKLMNPQRSTUVWXY",
-        "shelf_life_months": 36,
-        "confidence": "A",
-        "verified": true,
-        "source": "历史经验推测，多方验证"
-    },
-    {
-        "brand_id": "shiseido",
-        "name": "4位 YDDD 儒略日码",
-        "pattern": "^(\\\\d)(\\\\d{3})[A-Za-z0-9]*$",
-        "decode_type": "julian_date_yddd",
-        "shelf_life_months": 36,
-        "confidence": "A",
-        "verified": true,
-        "source": "资生堂集团产线标准"
-    }
-]"""
-
 MANIFEST_JSON = """{
   "name": "JP Date AI",
   "short_name": "JP Date",
@@ -359,14 +331,13 @@ self.addEventListener('fetch', (e) => { e.respondWith(caches.match(e.request).th
 """
 
 # ==========================================
-# 2. 自动生成目录结构函数 (模块导入时立即执行)
+# 2. 静态文件目录初始化
 # ==========================================
 BASE_DIR = "jp_product_date_ai_v1_1_web"
 
 def init_project_files():
     os.makedirs(os.path.join(BASE_DIR, "static/css"), exist_ok=True)
     os.makedirs(os.path.join(BASE_DIR, "static/js"), exist_ok=True)
-    os.makedirs(os.path.join(BASE_DIR, "data"), exist_ok=True)
 
     files = {
         "static/index.html": HTML_INDEX,
@@ -374,15 +345,10 @@ def init_project_files():
         "static/js/app.js": JS_APP,
         "static/manifest.json": MANIFEST_JSON,
         "static/sw.js": SW_JS,
-        "data/brands.json": JSON_BRANDS_DEFAULT,
-        "data/rules.json": JSON_RULES_DEFAULT
     }
 
     for path, content in files.items():
         file_path = os.path.join(BASE_DIR, path)
-        # 如果已经存在大库数据文件，绝不覆盖
-        if os.path.exists(file_path) and "data" in path:
-            continue
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
 
@@ -402,36 +368,44 @@ RULES_DATA = []
 
 def load_data_from_disk():
     global BRANDS_DATA, RULES_DATA
-    # 智能寻找 data 路径 (支持本地 data/ 或 web/data/)
+    # 绝对优先加载项目根目录下的 data/ 目录
+    current_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
-        os.path.join(BASE_DIR, "data"),
-        os.path.join(os.path.dirname(__file__), "data"),
-        os.path.join(os.getcwd(), "data")
+        os.path.join(current_dir, "data"),
+        os.path.join(os.getcwd(), "data"),
+        os.path.join(current_dir, BASE_DIR, "data")
     ]
-    target_data_dir = os.path.join(BASE_DIR, "data")
+    
+    target_brands_path = None
+    target_rules_path = None
+    
     for c in candidates:
-        if os.path.exists(os.path.join(c, "brands.json")):
-            target_data_dir = c
+        bp = os.path.join(c, "brands.json")
+        rp = os.path.join(c, "rules.json")
+        if os.path.exists(bp):
+            target_brands_path = bp
+            target_rules_path = rp
             break
 
-    try:
-        with open(os.path.join(target_data_dir, "brands.json"), "r", encoding="utf-8") as f:
-            BRANDS_DATA = json.load(f)
-    except Exception:
-        BRANDS_DATA = []
+    if target_brands_path and os.path.exists(target_brands_path):
+        try:
+            with open(target_brands_path, "r", encoding="utf-8") as f:
+                BRANDS_DATA = json.load(f)
+        except Exception:
+            BRANDS_DATA = []
 
-    try:
-        with open(os.path.join(target_data_dir, "rules.json"), "r", encoding="utf-8") as f:
-            RULES_DATA = json.load(f)
-    except Exception:
-        RULES_DATA = []
+    if target_rules_path and os.path.exists(target_rules_path):
+        try:
+            with open(target_rules_path, "r", encoding="utf-8") as f:
+                RULES_DATA = json.load(f)
+        except Exception:
+            RULES_DATA = []
 
 load_data_from_disk()
 
 @app.get("/api/brands")
 def get_brands():
-    if not BRANDS_DATA:
-        load_data_from_disk()
+    load_data_from_disk()
     return BRANDS_DATA
 
 @app.post("/api/query")
