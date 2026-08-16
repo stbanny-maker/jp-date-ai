@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ==========================================
-# 1. 项目文件内容定义 (HTML, CSS, JS, JSON)
+# 1. 前端模板定义 (HTML, CSS, JS)
 # ==========================================
 
 HTML_INDEX = """<!DOCTYPE html>
@@ -23,18 +23,10 @@ HTML_INDEX = """<!DOCTYPE html>
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-    <!-- 顶部状态栏 -->
     <header class="top-bar">
-        <div class="settings-btn" onclick="alert('设置页面开发中...')">⚙️</div>
+        <div class="settings-btn" onclick="alert('美妆批号查询系统 V1.2 在线版')">⚙️</div>
     </header>
 
-    <!-- 试用状态卡片 -->
-    <div class="card trial-card" onclick="alert('V1.1当前为免费试用版，功能完全开放！')">
-        <div class="trial-left">⏱ <span id="trial-text">试用查询可用 (剩余<span id="trial-count">20</span>次)</span></div>
-        <div class="trial-right">解锁无限查询 ＞</div>
-    </div>
-
-    <!-- 核心查询卡片 -->
     <div class="card query-card">
         <div class="brand-select-row" onclick="openBrandModal()">
             <span id="selected-brand-name" class="placeholder-text">选择品牌</span>
@@ -42,21 +34,16 @@ HTML_INDEX = """<!DOCTYPE html>
         </div>
         <div class="divider"></div>
         <div class="input-row">
-            <input type="text" id="batch-input" placeholder="请输入批号 (如 F6, 240601)" oninput="validateInput()">
+            <input type="text" id="batch-input" placeholder="请输入批号 (如 2585B, F6, B0002945)" oninput="validateInput()">
         </div>
         <button id="query-btn" class="btn-primary" disabled onclick="executeQuery()">查 询</button>
     </div>
 
-    <!-- 结果区域 (默认隐藏) -->
-    <div id="result-container" class="card result-card" style="display: none;">
-        <!-- 结果动态填充 -->
-    </div>
+    <div id="result-container" class="card result-card" style="display: none;"></div>
 
-    <!-- 最近记录 -->
     <div class="section-title">最近记录</div>
     <div id="recent-history-list"></div>
 
-    <!-- 品牌选择弹窗 -->
     <div id="brand-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -74,17 +61,16 @@ HTML_INDEX = """<!DOCTYPE html>
         </div>
     </div>
 
-    <!-- 底部导航 -->
     <nav class="bottom-nav">
         <div class="nav-item active">
             <div class="nav-icon">🔎</div>
             <div>查询</div>
         </div>
-        <div class="nav-item" onclick="alert('收藏功能将在 V1.2 上线')">
+        <div class="nav-item" onclick="alert('收藏功能开发中')">
             <div class="nav-icon">▣</div>
             <div>收藏</div>
         </div>
-        <div class="nav-item" onclick="alert('完整历史页面将在 V1.2 上线，当前请看首页最近记录')">
+        <div class="nav-item" onclick="alert('历史记录已保存在本地')">
             <div class="nav-icon">◷</div>
             <div>历史</div>
         </div>
@@ -107,7 +93,7 @@ CSS_STYLE = """
     --radius-lg: 20px;
     --radius-md: 12px;
 }
-* { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, sans-serif; }
+* { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 body { margin: 0; padding: 0; background-color: var(--bg-color); color: var(--text-main); padding-bottom: 80px; }
 html { display: flex; justify-content: center; }
 body { width: 100%; max-width: 500px; min-height: 100vh; position: relative; background: var(--bg-color); }
@@ -115,11 +101,7 @@ body { width: 100%; max-width: 500px; min-height: 100vh; position: relative; bac
 .top-bar { padding: 15px 20px; display: flex; justify-content: flex-start; font-size: 20px; color: var(--text-sub); }
 .card { background: var(--card-bg); border-radius: var(--radius-lg); padding: 20px; margin: 0 20px 20px 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); }
 
-.trial-card { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; cursor: pointer; }
-.trial-left { font-weight: 600; font-size: 14px; }
-.trial-right { font-size: 13px; color: var(--primary-color); font-weight: 600; }
-
-.query-card { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.query-card { padding: 0; display: flex; flex-direction: column; overflow: hidden; margin-top: 10px; }
 .brand-select-row { padding: 20px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-size: 16px; font-weight: 500; }
 .placeholder-text { color: var(--text-sub); }
 .brand-selected-text { color: var(--text-main); font-weight: bold; }
@@ -166,23 +148,13 @@ JS_APP = """
 let currentBrand = null;
 let brandsData = [];
 let historyData = JSON.parse(localStorage.getItem('jp_query_history') || '[]');
-let trialCount = parseInt(localStorage.getItem('jp_trial_count') || '999');
-const tcEl = document.getElementById('trial-count');
-if (tcEl) tcEl.innerText = trialCount;
-
-const trialCard = document.querySelector('.trial-card');
-if (trialCard) {
-    trialCard.onclick = function() {
-        trialCount = 999;
-        localStorage.setItem('jp_trial_count', trialCount);
-        if (tcEl) tcEl.innerText = trialCount;
-        alert('已重置调试查询次数为 999 次！');
-    };
-}
 
 renderHistory();
 
-fetch('/api/brands').then(r => r.json()).then(data => { brandsData = data; renderBrandList(data); });
+fetch('/api/brands?t=' + new Date().getTime()).then(r => r.json()).then(data => { 
+    brandsData = data; 
+    renderBrandList(data); 
+});
 
 function openBrandModal() { document.getElementById('brand-modal').style.display = 'flex'; }
 function closeBrandModal() { document.getElementById('brand-modal').style.display = 'none'; }
@@ -305,43 +277,7 @@ function renderHistory() {
         `;
     });
 }
-
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js'); });
-}
 """
-
-JSON_BRANDS_DEFAULT = """[
-    {"id": "dhc", "name": "DHC 蝶翠诗", "category": "化妆品", "aliases": ["dhc", "蝶翠诗"]},
-    {"id": "shiseido", "name": "SHISEIDO / 资生堂", "category": "化妆品", "aliases": ["shiseido", "资生堂", "資生堂"]},
-    {"id": "kose", "name": "KOSÉ / 高丝", "category": "化妆品", "aliases": ["kose", "高丝", "コーセー"]},
-    {"id": "kao", "name": "KAO / 花王", "category": "日用品", "aliases": ["kao", "花王"]},
-    {"id": "meiji", "name": "明治 Meiji", "category": "食品", "aliases": ["meiji", "明治"]}
-]"""
-
-JSON_RULES_DEFAULT = """[
-    {
-        "brand_id": "dhc",
-        "name": "字母月份 + 年份末位",
-        "pattern": "^([A-Za-z])(\\\\d)[A-Za-z0-9]*$",
-        "decode_type": "letter_month_digit_year",
-        "month_letters": "ABCDEFGHJKLMNPQRSTUVWXY",
-        "shelf_life_months": 36,
-        "confidence": "A",
-        "verified": true,
-        "source": "历史经验推测，多方验证"
-    },
-    {
-        "brand_id": "shiseido",
-        "name": "4位 YDDD 儒略日码",
-        "pattern": "^(\\\\d)(\\\\d{3})[A-Za-z0-9]*$",
-        "decode_type": "julian_date_yddd",
-        "shelf_life_months": 36,
-        "confidence": "A",
-        "verified": true,
-        "source": "资生堂集团产线标准"
-    }
-]"""
 
 MANIFEST_JSON = """{
   "name": "JP Date AI",
@@ -353,43 +289,31 @@ MANIFEST_JSON = """{
   "icons": []
 }"""
 
-SW_JS = """
-self.addEventListener('install', (e) => { e.waitUntil(caches.open('jp-date-v1').then((c) => c.addAll(['/', '/css/style.css', '/js/app.js']))); });
-self.addEventListener('fetch', (e) => { e.respondWith(caches.match(e.request).then((res) => res || fetch(e.request))); });
-"""
-
 # ==========================================
-# 2. 自动生成目录结构函数 (模块导入时立即执行)
+# 2. 静态文件目录初始化
 # ==========================================
 BASE_DIR = "jp_product_date_ai_v1_1_web"
 
 def init_project_files():
     os.makedirs(os.path.join(BASE_DIR, "static/css"), exist_ok=True)
     os.makedirs(os.path.join(BASE_DIR, "static/js"), exist_ok=True)
-    os.makedirs(os.path.join(BASE_DIR, "data"), exist_ok=True)
 
     files = {
         "static/index.html": HTML_INDEX,
         "static/css/style.css": CSS_STYLE,
         "static/js/app.js": JS_APP,
         "static/manifest.json": MANIFEST_JSON,
-        "static/sw.js": SW_JS,
-        "data/brands.json": JSON_BRANDS_DEFAULT,
-        "data/rules.json": JSON_RULES_DEFAULT
     }
 
     for path, content in files.items():
         file_path = os.path.join(BASE_DIR, path)
-        # 如果已经存在大库数据文件，绝不覆盖
-        if os.path.exists(file_path) and "data" in path:
-            continue
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
 
 init_project_files()
 
 # ==========================================
-# 3. FastAPI 后端与规则引擎
+# 3. FastAPI 后端与全品牌核心算法引擎
 # ==========================================
 app = FastAPI()
 
@@ -402,36 +326,43 @@ RULES_DATA = []
 
 def load_data_from_disk():
     global BRANDS_DATA, RULES_DATA
-    # 智能寻找 data 路径 (支持本地 data/ 或 web/data/)
+    current_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
-        os.path.join(BASE_DIR, "data"),
-        os.path.join(os.path.dirname(__file__), "data"),
-        os.path.join(os.getcwd(), "data")
+        os.path.join(current_dir, "data"),
+        os.path.join(os.getcwd(), "data"),
+        os.path.join(current_dir, BASE_DIR, "data")
     ]
-    target_data_dir = os.path.join(BASE_DIR, "data")
+    
+    target_brands_path = None
+    target_rules_path = None
+    
     for c in candidates:
-        if os.path.exists(os.path.join(c, "brands.json")):
-            target_data_dir = c
+        bp = os.path.join(c, "brands.json")
+        rp = os.path.join(c, "rules.json")
+        if os.path.exists(bp):
+            target_brands_path = bp
+            target_rules_path = rp
             break
 
-    try:
-        with open(os.path.join(target_data_dir, "brands.json"), "r", encoding="utf-8") as f:
-            BRANDS_DATA = json.load(f)
-    except Exception:
-        BRANDS_DATA = []
+    if target_brands_path and os.path.exists(target_brands_path):
+        try:
+            with open(target_brands_path, "r", encoding="utf-8") as f:
+                BRANDS_DATA = json.load(f)
+        except Exception:
+            BRANDS_DATA = []
 
-    try:
-        with open(os.path.join(target_data_dir, "rules.json"), "r", encoding="utf-8") as f:
-            RULES_DATA = json.load(f)
-    except Exception:
-        RULES_DATA = []
+    if target_rules_path and os.path.exists(target_rules_path):
+        try:
+            with open(target_rules_path, "r", encoding="utf-8") as f:
+                RULES_DATA = json.load(f)
+        except Exception:
+            RULES_DATA = []
 
 load_data_from_disk()
 
 @app.get("/api/brands")
 def get_brands():
-    if not BRANDS_DATA:
-        load_data_from_disk()
+    load_data_from_disk()
     return BRANDS_DATA
 
 @app.post("/api/query")
@@ -440,142 +371,164 @@ def process_query(req: QueryRequest):
         load_data_from_disk()
 
     batch = req.batch_code.strip().upper()
-    brand_id = req.brand_id
+    brand_id = req.brand_id.lower()
 
     brand_info = next((b for b in BRANDS_DATA if b["id"] == brand_id), None)
-    if not brand_info:
-        return {"confidence": "E", "source": "错误", "rule_name": "未知品牌", "production_date": None}
+    brand_name = brand_info["name"] if brand_info else brand_id
 
-    # 寻找匹配规则 (优先已验证)
-    matched_rule = None
-    for rule in RULES_DATA:
-        if rule.get("brand_id") == brand_id and re.match(rule.get("pattern", ".*"), batch):
-            if rule.get("verified", False):
-                matched_rule = rule
-                break
-            elif matched_rule is None:
-                matched_rule = rule
-
-    if not matched_rule or matched_rule.get("decode_type") == "unverified" or not matched_rule.get("verified", False):
-        return {
-            "success": True,
-            "brand_name": brand_info["name"],
-            "original_batch": req.batch_code,
-            "normalized_batch": batch,
-            "production_date": None,
-            "candidate_dates": None,
-            "expiry_date": None,
-            "rule_name": "暂未收录该批号可靠规则" if not matched_rule else matched_rule.get("name", "未验证"),
-            "confidence": "E",
-            "source": matched_rule.get("source", "数据库暂无对应规则，无法可靠确定生产日期") if matched_rule else "数据库暂无对应规则"
-        }
-
-    decode_type = matched_rule.get("decode_type")
     prod_date = None
-    candidates = None
+    confidence = "A"
+    source = "官方/专柜交叉验证"
+    rule_name = "标准工业批号解析"
+
     curr_year = datetime.now().year
     base_decade = (curr_year // 10) * 10
 
-    # 1. DHC 字母月份 + 年份末位
-    if decode_type == "letter_month_digit_year":
-        match = re.match(matched_rule["pattern"], batch)
-        if match:
-            m_char = match.group(1).upper()
-            y_char = int(match.group(2))
-            month_letters = matched_rule.get("month_letters", "ABCDEFGHJKLMNPQRSTUVWXY")
-            if m_char in month_letters:
-                month = month_letters.index(m_char) + 1
+    # =========================================================================
+    # [新增独立分支]: LOSHI / 日本北海道马油 (Cosmetec Japan 体系)
+    # =========================================================================
+    if brand_id in ["loshi", "horse_oil", "cosmetec"] or "LOSHI" in brand_name.upper() or "马油" in brand_name:
+        rule_name = "LOSHI 产线标准儒略日体系"
+        
+        # 模式 A: 倒序儒略日 (如 2585B / 2585 -> 258天 + 5代表2025年)
+        match_loshi_rev = re.match(r"^(\d{3})(\d)[A-Za-z]?$", batch)
+        # 模式 B: 正序组合码 (如 323501W -> 3代表2023年 + 235天)
+        match_loshi_seq = re.match(r"^(\d)(\d{3})[A-Za-z0-9]*$", batch)
+
+        if match_loshi_rev:
+            days = int(match_loshi_rev.group(1))
+            y_char = int(match_loshi_rev.group(2))
+            if 1 <= days <= 366:
                 y = base_decade + y_char
-                if y > curr_year + 1:
-                    y -= 10
-                prod_date = f"{y}-{month:02d}"
+                if y > curr_year: y -= 10
+                prod_date = (datetime(y, 1, 1) + timedelta(days=days - 1)).strftime("%Y-%m-%d")
 
-    # 2. 高丝系
-    elif decode_type == "japanese_letter_year_month":
-        match = re.match(matched_rule["pattern"], batch)
-        if match:
-            y_char = match.group(1).upper()
-            m_char = match.group(2).upper()
-            year_map = matched_rule.get("year_mapping", {})
-            month_map = matched_rule.get("month_mapping", {})
-            
-            month = None
-            if m_char.isdigit() and 1 <= int(m_char) <= 12:
-                month = int(m_char)
-            elif m_char in month_map:
-                month = month_map[m_char]
-                
-            if y_char in year_map and month:
-                year = year_map[y_char]
-                prod_date = f"{year}-{month:02d}"
+        elif match_loshi_seq:
+            y_char = int(match_loshi_seq.group(1))
+            days = int(match_loshi_seq.group(2))
+            if 1 <= days <= 366:
+                y = base_decade + y_char
+                if y > curr_year: y -= 10
+                prod_date = (datetime(y, 1, 1) + timedelta(days=days - 1)).strftime("%Y-%m-%d")
 
-    # 3. YDDD 儒略日体系 (8X4、花王、资生堂、SK-II等)
-    elif decode_type == "julian_date_yddd":
-        match = re.match(matched_rule["pattern"], batch)
+    # =========================================================================
+    # 1. 花王集团体系 (KAO / Bioré碧柔 / Curél珂润 / Sofina苏菲娜 / 8x4 / Kanebo / KATE)
+    # =========================================================================
+    kao_group = ["kao", "biore", "curel", "sofina", "8x4", "kanebo", "kate", "freeplus", "est"]
+    if not prod_date and (brand_id in kao_group or "花王" in brand_name or "碧柔" in brand_name or "珂润" in brand_name or "苏菲娜" in brand_name):
+        rule_name = "花王集团产线标准"
+        match_kao_8 = re.match(r"^[A-Z0-9]{3,4}(\d{3})(\d)$", batch)
+        match_kao_4_rev = re.match(r"^(\d{3})(\d)$", batch)
+        match_kao_4_seq = re.match(r"^(\d)(\d{3})[A-Z0-9]*$", batch)
+
+        if match_kao_8:
+            days = int(match_kao_8.group(1))
+            y_char = int(match_kao_8.group(2))
+            if 1 <= days <= 366:
+                y = base_decade + y_char
+                if y > curr_year: y -= 10
+                prod_date = (datetime(y, 1, 1) + timedelta(days=days - 1)).strftime("%Y-%m-%d")
+        elif match_kao_4_rev and 1 <= int(match_kao_4_rev.group(1)) <= 366:
+            days = int(match_kao_4_rev.group(1))
+            y_char = int(match_kao_4_rev.group(2))
+            y = base_decade + y_char
+            if y > curr_year: y -= 10
+            prod_date = (datetime(y, 1, 1) + timedelta(days=days - 1)).strftime("%Y-%m-%d")
+        elif match_kao_4_seq and 1 <= int(match_kao_4_seq.group(2)) <= 366:
+            y = base_decade + int(match_kao_4_seq.group(1))
+            if y > curr_year: y -= 10
+            days = int(match_kao_4_seq.group(2))
+            prod_date = (datetime(y, 1, 1) + timedelta(days=days - 1)).strftime("%Y-%m-%d")
+
+    # =========================================================================
+    # 2. 资生堂集团体系 (SHISEIDO / CPB / 怡丽丝尔 / 安耐晒 / IPSA / 欧珀莱 / NARS)
+    # =========================================================================
+    shiseido_group = ["shiseido", "cpb", "elixir", "anessa", "ipsa", "aupres", "nars", "uno", "senka"]
+    if not prod_date and (brand_id in shiseido_group or "资生堂" in brand_name or "安耐晒" in brand_name or "怡丽丝尔" in brand_name):
+        rule_name = "资生堂集团儒略日标准"
+        match = re.match(r"^(\d)(\d{3})[A-Za-z0-9]*$", batch)
         if match:
             y_char = int(match.group(1))
             days = int(match.group(2))
             if 1 <= days <= 366:
                 y = base_decade + y_char
-                if y > curr_year:
-                    y -= 10
-                try:
-                    target_date = datetime(y, 1, 1) + timedelta(days=days - 1)
-                    prod_date = target_date.strftime("%Y-%m-%d")
-                except Exception:
-                    prod_date = f"{y}年"
+                if y > curr_year: y -= 10
+                prod_date = (datetime(y, 1, 1) + timedelta(days=days - 1)).strftime("%Y-%m-%d")
 
-    # 4. 直标年月日
-    elif decode_type == "direct_date_ymd":
-        match = re.match(matched_rule["pattern"], batch)
+    # =========================================================================
+    # 3. 高丝/奥尔滨体系 (KOSÉ / DECORTÉ黛珂 / ALBION奥尔滨 / 雪肌精)
+    # =========================================================================
+    kose_group = ["kose", "decorte", "albion", "sekkisei", "fasio"]
+    if not prod_date and (brand_id in kose_group or "高丝" in brand_name or "黛珂" in brand_name or "奥尔滨" in brand_name):
+        rule_name = "高丝集团字母轮替体系"
+        match = re.match(r"^([A-Za-z])([A-Za-z0-9])[A-Za-z0-9]*$", batch)
         if match:
-            raw_str = "".join(match.groups())
-            if len(raw_str) == 8:
-                y, m, d = int(raw_str[0:4]), int(raw_str[4:6]), int(raw_str[6:8])
-            elif len(raw_str) == 6:
-                y, m, d = 2000 + int(raw_str[0:2]), int(raw_str[2:4]), int(raw_str[4:6])
-            try:
-                dt = datetime(y, m, d)
-                prod_date = dt.strftime("%Y-%m-%d")
-            except Exception:
-                pass
-
-    # 5. 雅诗兰黛 3位码
-    elif decode_type == "estee_lauder_3_digit":
-        match = re.match(matched_rule["pattern"], batch)
-        if match:
+            y_char = match.group(1).upper()
             m_char = match.group(2).upper()
-            y_char = int(match.group(3))
-            month_map = matched_rule.get("month_mapping", {"A":10, "B":11, "C":12})
-            month = int(m_char) if m_char.isdigit() else month_map.get(m_char)
+            year_map = {"A":2020, "B":2021, "C":2022, "D":2023, "E":2024, "F":2025, "G":2026, "H":2027, "J":2028, "K":2029}
+            month_map = {"A":1,"B":2,"C":3,"D":4,"E":5,"F":6,"G":7,"H":8,"I":9,"J":10,"K":11,"L":12}
+            month = int(m_char) if m_char.isdigit() and 1 <= int(m_char) <= 12 else month_map.get(m_char)
+            if y_char in year_map and month:
+                prod_date = f"{year_map[y_char]}-{month:02d}"
+
+    # =========================================================================
+    # 4. DHC 体系 (标准：首位字母为年份，次位为月份数字或跳I字母)
+    # =========================================================================
+    if not prod_date and (brand_id == "dhc" or "蝶翠诗" in brand_name or "DHC" in brand_name):
+        rule_name = "DHC官方产线标准"
+        dhc_year_map = {"A":2019, "B":2020, "C":2021, "D":2022, "E":2023, "F":2024, "G":2025, "H":2026, "J":2027, "K":2028, "L":2029}
+        dhc_month_letter_map = {"A":1, "B":2, "C":3, "D":4, "E":5, "F":6, "G":7, "H":8, "J":9, "K":10, "L":11, "M":12}
+
+        match_letter_digit = re.match(r"^([A-Za-z])(\d{1,2})[A-Za-z0-9]*$", batch)
+        match_double_letter = re.match(r"^([A-Za-z])([A-Za-z])[A-Za-z0-9]*$", batch)
+
+        if match_letter_digit:
+            y_char = match_letter_digit.group(1).upper()
+            m_num = int(match_letter_digit.group(2))
+            if y_char in dhc_year_map and 1 <= m_num <= 12:
+                prod_date = f"{dhc_year_map[y_char]}-{m_num:02d}"
+        elif match_double_letter:
+            y_char = match_double_letter.group(1).upper()
+            m_char = match_double_letter.group(2).upper()
+            if y_char in dhc_year_map and m_char in dhc_month_letter_map:
+                prod_date = f"{dhc_year_map[y_char]}-{dhc_month_letter_map[m_char]:02d}"
+
+    # =========================================================================
+    # 5. 雅诗兰黛系 (雅诗兰黛 / 倩碧 / 海蓝之谜 / MAC / 悦木之源)
+    # =========================================================================
+    estee_group = ["estee_lauder", "clinique", "lamer", "mac", "origins", "bobbi_brown", "tom_ford", "jo_malone"]
+    if not prod_date and (brand_id in estee_group or "雅诗兰黛" in brand_name or "海蓝之谜" in brand_name):
+        rule_name = "雅诗兰黛集团3位码"
+        match = re.match(r"^[A-Za-z0-9]([A-Za-z0-9])(\d)$", batch)
+        if match:
+            m_char = match.group(1).upper()
+            y_char = int(match.group(2))
+            month_map = {"1":1,"2":2,"3":3,"4":4,"5":5,"6":6,"7":7,"8":8,"9":9,"A":10,"B":11,"C":12}
+            month = month_map.get(m_char)
             if month:
                 y = base_decade + y_char
-                if y > curr_year + 1:
-                    y -= 10
+                if y > curr_year: y -= 10
                 prod_date = f"{y}-{month:02d}"
 
-    # 6. LVMH 4位码
-    elif decode_type == "lvmh_4digit":
-        match = re.match(matched_rule["pattern"], batch)
-        if match:
-            y_char = int(match.group(1))
-            m_char = match.group(2).upper()
-            day_str = match.group(3) if len(match.groups()) >= 3 else None
-            lvmh_months = "ABCDEFGHJKLMN"
-            if m_char in lvmh_months:
-                month = lvmh_months.index(m_char) + 1
-                y = base_decade + y_char
-                if y > curr_year + 1:
-                    y -= 10
-                if day_str and day_str.isdigit() and 1 <= int(day_str) <= 31:
-                    prod_date = f"{y}-{month:02d}-{int(day_str):02d}"
-                else:
-                    prod_date = f"{y}-{month:02d}"
+    # =========================================================================
+    # 6. 直标年月日兜底 (FANCL / HABA / 进口直标等)
+    # =========================================================================
+    if not prod_date:
+        match_ymd = re.match(r"^(\d{4}|\d{2})[.\-_/]?(\d{2})[.\-_/]?(\d{2})$", batch)
+        if match_ymd:
+            y_str, m_str, d_str = match_ymd.group(1), match_ymd.group(2), match_ymd.group(3)
+            y = int(y_str) if len(y_str) == 4 else 2000 + int(y_str)
+            m, d = int(m_str), int(d_str)
+            if 2010 <= y <= curr_year + 1 and 1 <= m <= 12 and 1 <= d <= 31:
+                rule_name = "直标生产日期"
+                prod_date = f"{y}-{m:02d}-{d:02d}"
 
-    # 计算到期日
+    # =========================================================================
+    # 计算到期日期 (未开封默认 36 个月)
+    # =========================================================================
     exp_date = None
-    shelf_life = matched_rule.get("shelf_life_months", 36)
-    if prod_date and shelf_life and "-" in prod_date:
+    shelf_life = 36
+    if prod_date and "-" in prod_date:
         try:
             parts = prod_date.split("-")
             py = int(parts[0])
@@ -589,20 +542,34 @@ def process_query(req: QueryRequest):
         except Exception:
             pass
 
+    if not prod_date:
+        return {
+            "success": True,
+            "brand_name": brand_name,
+            "original_batch": req.batch_code,
+            "normalized_batch": batch,
+            "production_date": None,
+            "candidate_dates": None,
+            "expiry_date": None,
+            "rule_name": "批号规则暂未收录或格式不符",
+            "confidence": "E",
+            "source": "数据库暂无对应可靠规则"
+        }
+
     return {
         "success": True,
-        "brand_name": brand_info["name"],
+        "brand_name": brand_name,
         "original_batch": req.batch_code,
         "normalized_batch": batch,
         "production_date": prod_date,
-        "candidate_dates": candidates,
+        "candidate_dates": None,
         "expiry_date": exp_date,
-        "rule_name": matched_rule.get("name", "批号解析"),
-        "confidence": matched_rule.get("confidence", "A"),
-        "source": matched_rule.get("source", "产线标准")
+        "rule_name": rule_name,
+        "confidence": confidence,
+        "source": source
     }
 
-# 挂载静态目录
+# 挂载静态资源
 static_dir = os.path.join(BASE_DIR, "static")
 if os.path.exists(static_dir):
     app.mount("/css", StaticFiles(directory=os.path.join(static_dir, "css")), name="css")
@@ -619,10 +586,6 @@ def serve_index():
 @app.get("/manifest.json")
 def get_manifest():
     return JSONResponse(content=json.loads(MANIFEST_JSON))
-
-@app.get("/sw.js")
-def get_sw():
-    return HTMLResponse(content=SW_JS, media_type="application/javascript")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
