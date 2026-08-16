@@ -385,6 +385,30 @@ def process_query(req: QueryRequest):
     base_decade = (curr_year // 10) * 10
 
     # =========================================================================
+    # [独立插槽]: Kracie / 葵缇亚 / 肌美精 (Hadabisei 5位混编码体系)
+    # =========================================================================
+    if not prod_date and (brand_id in ["kracie", "hadabisei"] or "KRACIE" in brand_name.upper() or "肌美精" in brand_name or "葵缇亚" in brand_name):
+        rule_name = "Kracie 葵缇亚/肌美精标准批号"
+        
+        # 5位混编码 (如 71BH2 -> 首位年 7, 次位月 1)
+        match_kracie = re.match(r"^(\d)([0-9A-Za-z])[A-Za-z0-9]*$", batch)
+        if match_kracie:
+            y_char = int(match_kracie.group(1))
+            m_raw = match_kracie.group(2).upper()
+            
+            month_map_kracie = {
+                "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,
+                "A": 10, "B": 11, "C": 12, "X": 10, "Y": 11, "Z": 12
+            }
+            
+            month = month_map_kracie.get(m_raw, 1)
+            y = base_decade + y_char
+            if y > curr_year:
+                y -= 10
+            prod_date = f"{y}-{month:02d}"
+
+
+    # =========================================================================
     # [独立插槽]: 大正制药 / Taisho (根据实物盒装校准)
     # =========================================================================
     if brand_id in ["taisho", "pabron"] or "大正" in brand_name or "TAISHO" in brand_name.upper():
