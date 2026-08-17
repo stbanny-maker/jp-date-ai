@@ -385,6 +385,49 @@ def process_query(req: QueryRequest):
     base_decade = (curr_year // 10) * 10
 
     # =========================================================================
+    # [独立插槽]: Deonatulle / 杜得乐 (消臭石 6位复合码体系)
+    # =========================================================================
+    if not prod_date and (brand_id in ["deonatulle", "cobicredo"] or "DEONATULLE" in brand_name.upper() or "杜得乐" in brand_name or "消臭石" in brand_name):
+        rule_name = "Deonatulle 杜得乐产线标准"
+        
+        # 匹配 2位字母前缀 + 年份数字 + 流水 (如 FA5541 -> FA工厂, 5=2025年, 5=5月)
+        match_deo = re.match(r"^[A-Za-z]{2}(\d)([0-9A-Za-z])\d*$", batch)
+        if match_deo:
+            y_char = int(match_deo.group(1))
+            m_raw = match_deo.group(2).upper()
+            
+            month_map_std = {
+                "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,
+                "A": 10, "B": 11, "C": 12, "0": 10, "X": 10, "Y": 11, "Z": 12
+            }
+            month = month_map_std.get(m_raw, 5)
+            y = base_decade + y_char
+            if y > curr_year:
+                y -= 10
+            prod_date = f"{y}-{month:02d}"
+
+    # =========================================================================
+    # [通用兜底增强]: 2位字母前缀 + 数字年份 + 月份 (覆盖大部分未建档日系小众品牌)
+    # =========================================================================
+    if not prod_date:
+        match_general_prefix = re.match(r"^[A-Za-z]{2}(\d)([0-9A-Za-z])\d{2,4}$", batch)
+        if match_general_prefix:
+            y_char = int(match_general_prefix.group(1))
+            m_raw = match_general_prefix.group(2).upper()
+            month_map_gen = {
+                "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,
+                "A": 1, "B": 2, "C": 3, "D": 4, "E": 5, "F": 6, "G": 7, "H": 8, "I": 9, "J": 10, "K": 11, "L": 12,
+                "X": 10, "Y": 11, "Z": 12
+            }
+            month = month_map_gen.get(m_raw, 1)
+            y = base_decade + y_char
+            if y > curr_year:
+                y -= 10
+            rule_name = "通用工业批号解析"
+            prod_date = f"{y}-{month:02d}"
+
+
+    # =========================================================================
     # [独立插槽]: Kracie / 葵缇亚 / 肌美精 (校准真实流通批次)
     # =========================================================================
     if not prod_date and (brand_id in ["kracie", "hadabisei"] or "KRACIE" in brand_name.upper() or "肌美精" in brand_name or "葵缇亚" in brand_name):
