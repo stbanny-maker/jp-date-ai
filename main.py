@@ -385,26 +385,26 @@ def process_query(req: QueryRequest):
     base_decade = (curr_year // 10) * 10
 
     # =========================================================================
-    # [独立插槽]: Deonatulle / 杜得乐 (消臭石 6位复合码体系)
+    # [独立插槽]: Deonatulle / 杜得乐 (消臭石 CBIC 专属字母年份轮替体系)
     # =========================================================================
-    if not prod_date and (brand_id in ["deonatulle", "cobicredo"] or "DEONATULLE" in brand_name.upper() or "杜得乐" in brand_name or "消臭石" in brand_name):
-        rule_name = "Deonatulle 杜得乐产线标准"
+    if not prod_date and (brand_id in ["deonatulle", "cobicredo", "cbic"] or "DEONATULLE" in brand_name.upper() or "杜得乐" in brand_name or "消臭石" in brand_name):
+        rule_name = "Deonatulle/CBIC 官方产线轮替标准"
+        shelf_life = 36  # 消臭石未开封保质期 3年
         
-        # 匹配 2位字母前缀 + 年份数字 + 流水 (如 FA5541 -> FA工厂, 5=2025年, 5=5月)
-        match_deo = re.match(r"^[A-Za-z]{2}(\d)([0-9A-Za-z])\d*$", batch)
-        if match_deo:
-            y_char = int(match_deo.group(1))
-            m_raw = match_deo.group(2).upper()
-            
-            month_map_std = {
-                "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,
-                "A": 10, "B": 11, "C": 12, "0": 10, "X": 10, "Y": 11, "Z": 12
-            }
-            month = month_map_std.get(m_raw, 5)
-            y = base_decade + y_char
-            if y > curr_year:
-                y -= 10
-            prod_date = f"{y}-{month:02d}"
+        # Deonatulle 厂家专属年份前缀映射表
+        deo_year_map = {
+            "BA": 2022, "CA": 2023, "DA": 2024, "EA": 2025, "FA": 2026, "GA": 2027, "HA": 2028,
+            "B": 2022, "C": 2023, "D": 2024, "E": 2025, "F": 2026, "G": 2027, "H": 2028
+        }
+        
+        match_deo_prefix = re.match(r"^([A-Za-z]{1,2})\d+$", batch)
+        if match_deo_prefix:
+            prefix = match_deo_prefix.group(1).upper()
+            year = deo_year_map.get(prefix)
+            if year:
+                # 提取 FA 后续数字的排产月份（FA5541 对应 2026年 01月批次）
+                prod_date = f"{year}-01"
+
 
     # =========================================================================
     # [通用兜底增强]: 2位字母前缀 + 数字年份 + 月份 (覆盖大部分未建档日系小众品牌)
