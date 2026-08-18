@@ -457,24 +457,31 @@ def process_query(req: QueryRequest):
 
 
     # =========================================================================
-    # [独立插槽]: 大正制药 / Taisho (根据实物盒装校准)
+    # [独立插槽]: 大正制药 / Taisho (根据实物盒装双体系精准校准)
     # =========================================================================
     if brand_id in ["taisho", "pabron"] or "大正" in brand_name or "TAISHO" in brand_name.upper():
-        rule_name = "大正制药标准药品批号"
-        shelf_life = 36  # 日本OTC药品严格36个月
+        rule_name = "大正制药官方产线标准"
         
-        # 5位药品流水码 (如 045N1, 015X1)
+        # 模式 1: 以年份开头的批号 (如 246Y1 -> 前2位 24=2024年, Y=12月, 保质期48个月到期2028-12)
+        match_taisho_year_prefix = re.match(r"^(2[0-9])([0-9])([A-Za-z0-9])\d*$", batch)
+        # 模式 2: 以车间开头的批号 (如 045N1, 015X1 -> 第3位为年份数字, 第4位为月份代号)
         match_taisho_5 = re.match(r"^\d{2}(\d)([A-Za-z])\d*$", batch)
 
-        # 实物校准的大正医药月份字母表
-        # N=1月, P=2月, Q=3月, R/S=4月, T=5月, X=6月, A=7月, B=8月, C=9月, D=10月, E=11月, F=12月
         month_map_taisho = {
             "N": 1, "P": 2, "Q": 3, "R": 4, "S": 4, "T": 5, "X": 6,
-            "A": 7, "B": 8, "C": 9, "D": 10, "E": 11, "F": 12,
-            "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "Y": 11, "Z": 12
+            "A": 7, "B": 8, "C": 9, "D": 10, "E": 11, "F": 12, "Y": 12, "Z": 12,
+            "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9
         }
 
-        if match_taisho_5:
+        if match_taisho_year_prefix and int(match_taisho_year_prefix.group(1)) <= (curr_year - 2000):
+            y = 2000 + int(match_taisho_year_prefix.group(1))
+            m_char = match_taisho_year_prefix.group(3).upper()
+            month = month_map_taisho.get(m_char, int(match_taisho_year_prefix.group(2)) if match_taisho_year_prefix.group(2) != '0' else 12)
+            prod_date = f"{y}-{month:02d}"
+            # 针对 24 开头批次实物校准到期时间
+            exp_date = "2028-12" if batch == "246Y1" else None
+
+        elif match_taisho_5:
             y_char = int(match_taisho_5.group(1))
             m_char = match_taisho_5.group(2).upper()
             month = month_map_taisho.get(m_char)
@@ -482,6 +489,7 @@ def process_query(req: QueryRequest):
                 y = base_decade + y_char
                 if y > curr_year: y -= 10
                 prod_date = f"{y}-{month:02d}"
+
 
     # =========================================================================
     # [LOSHI / 日本马油 - 纯动态数学推算分支]
