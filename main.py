@@ -455,6 +455,47 @@ def process_query(req: QueryRequest):
             month = kracie_month_map.get(c2, 1)
             prod_date = f"{year}-{month:02d}"
 
+    # =========================================================================
+    # [独立插槽]: OMI / 近江兄弟 (近江兄弟社 专属字母年月+日 体系)
+    # =========================================================================
+    if not prod_date and (brand_id in ["omi", "menturm", "omibrotherhood"] or "OMI" in brand_name.upper() or "近江兄弟" in brand_name):
+        rule_name = "近江兄弟官方产线标准"
+        shelf_life = 36  # 润唇膏/防晒标准保质期 36 个月
+        
+        # 模式 1: 6位字母+数字码 (如 CFF10J -> C=2026年, F=06月, 10=10日)
+        match_omi_full = re.match(r"^([A-Za-z])([A-Za-z])[A-Za-z0-9]?(\d{2})[A-Za-z0-9]*$", batch)
+        # 模式 2: 简易字母年月码 (如 CF1, CB01)
+        match_omi_short = re.match(r"^([A-Za-z])([A-Za-z])[A-Za-z0-9]*$", batch)
+
+        omi_year_map = {
+            "A": 2024, "B": 2025, "C": 2026, "D": 2027, "E": 2028,
+            "F": 2029, "G": 2030, "H": 2031
+        }
+        omi_month_map = {
+            "A": 1, "B": 2, "C": 3, "D": 4, "E": 5, "F": 6,
+            "G": 7, "H": 8, "I": 9, "J": 10, "K": 11, "L": 12
+        }
+
+        if match_omi_full:
+            y_char = match_omi_full.group(1).upper()
+            m_char = match_omi_full.group(2).upper()
+            day_num = int(match_omi_full.group(3))
+            
+            year = omi_year_map.get(y_char, 2026)
+            month = omi_month_map.get(m_char, 1)
+            
+            if 1 <= day_num <= 31:
+                prod_date = f"{year}-{month:02d}-{day_num:02d}"
+            else:
+                prod_date = f"{year}-{month:02d}"
+
+        elif match_omi_short:
+            y_char = match_omi_short.group(1).upper()
+            m_char = match_omi_short.group(2).upper()
+            
+            year = omi_year_map.get(y_char, 2026)
+            month = omi_month_map.get(m_char, 1)
+            prod_date = f"{year}-{month:02d}"
 
     # =========================================================================
     # [独立插槽]: 大正制药 / Taisho (根据实物盒装双体系精准校准)
