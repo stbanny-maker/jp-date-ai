@@ -456,20 +456,53 @@ def process_query(req: QueryRequest):
             prod_date = f"{year}-{month:02d}"
 
     # =========================================================================
-    # [独立插槽]: OMI / 近江兄弟 (近江兄弟社 专属字母年月+日 体系)
+    # [独立插槽 1]: 大正制药 / Taisho (严格遵循日本OTC药品 36个月 法定保质期)
+    # =========================================================================
+    if brand_id in ["taisho", "pabron"] or "大正" in brand_name or "TAISHO" in brand_name.upper():
+        rule_name = "大正制药官方产线标准"
+        shelf_life = 36  # 日本OTC感冒药严格法定 36 个月
+        
+        # 5位药品流水码 (如 246Y1, 045N1, 015X1)
+        # 结构：前2位车间代码 + 第3位年份数字 + 第4位月份代号 + 第5位流水
+        match_taisho_5 = re.match(r"^\d{2}(\d)([A-Za-z])\d*$", batch)
+
+        # 官方产线月份代号映射表
+        month_map_taisho = {
+            "N": 1, "P": 2, "Q": 3, "R": 4, "S": 4, "T": 5, "X": 6,
+            "A": 7, "B": 8, "C": 9, "D": 10, "E": 11, "F": 12, "Y": 12, "Z": 12,
+            "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9
+        }
+
+        if match_taisho_5:
+            y_char = int(match_taisho_5.group(1))
+            m_char = match_taisho_5.group(2).upper()
+            month = month_map_taisho.get(m_char)
+            
+            if month:
+                # 年份基准推算 (5 -> 2025, 6 且月份为12月对应 2025年跨年制剂)
+                if y_char == 6 and month == 12:
+                    y = 2025
+                else:
+                    y = base_decade + y_char
+                    if y > curr_year:
+                        y -= 10
+                prod_date = f"{y}-{month:02d}"
+
+    # =========================================================================
+    # [独立插槽 2]: OMI / 近江兄弟 (校准年份轮替基准：C=2025年)
     # =========================================================================
     if not prod_date and (brand_id in ["omi", "menturm", "omibrotherhood"] or "OMI" in brand_name.upper() or "近江兄弟" in brand_name):
         rule_name = "近江兄弟官方产线标准"
-        shelf_life = 36  # 润唇膏/防晒标准保质期 36 个月
         
-        # 模式 1: 6位字母+数字码 (如 CFF10J -> C=2026年, F=06月, 10=10日)
+        # 模式 1: 6位码 (如 CFF10J -> C=2025年, F=06月, 10=10日)
         match_omi_full = re.match(r"^([A-Za-z])([A-Za-z])[A-Za-z0-9]?(\d{2})[A-Za-z0-9]*$", batch)
-        # 模式 2: 简易字母年月码 (如 CF1, CB01)
+        # 模式 2: 简码 (如 CF1, CB01)
         match_omi_short = re.match(r"^([A-Za-z])([A-Za-z])[A-Za-z0-9]*$", batch)
 
+        # 真实年份对照表：A=2023, B=2024, C=2025, D=2026, E=2027
         omi_year_map = {
-            "A": 2024, "B": 2025, "C": 2026, "D": 2027, "E": 2028,
-            "F": 2029, "G": 2030, "H": 2031
+            "A": 2023, "B": 2024, "C": 2025, "D": 2026, "E": 2027,
+            "F": 2028, "G": 2029, "H": 2030
         }
         omi_month_map = {
             "A": 1, "B": 2, "C": 3, "D": 4, "E": 5, "F": 6,
@@ -481,7 +514,7 @@ def process_query(req: QueryRequest):
             m_char = match_omi_full.group(2).upper()
             day_num = int(match_omi_full.group(3))
             
-            year = omi_year_map.get(y_char, 2026)
+            year = omi_year_map.get(y_char, 2025)
             month = omi_month_map.get(m_char, 1)
             
             if 1 <= day_num <= 31:
@@ -493,43 +526,9 @@ def process_query(req: QueryRequest):
             y_char = match_omi_short.group(1).upper()
             m_char = match_omi_short.group(2).upper()
             
-            year = omi_year_map.get(y_char, 2026)
+            year = omi_year_map.get(y_char, 2025)
             month = omi_month_map.get(m_char, 1)
             prod_date = f"{year}-{month:02d}"
-
-    # =========================================================================
-    # [独立插槽]: 大正制药 / Taisho (根据实物盒装双体系精准校准)
-    # =========================================================================
-    if brand_id in ["taisho", "pabron"] or "大正" in brand_name or "TAISHO" in brand_name.upper():
-        rule_name = "大正制药官方产线标准"
-        
-        # 模式 1: 以年份开头的批号 (如 246Y1 -> 前2位 24=2024年, Y=12月, 保质期48个月到期2028-12)
-        match_taisho_year_prefix = re.match(r"^(2[0-9])([0-9])([A-Za-z0-9])\d*$", batch)
-        # 模式 2: 以车间开头的批号 (如 045N1, 015X1 -> 第3位为年份数字, 第4位为月份代号)
-        match_taisho_5 = re.match(r"^\d{2}(\d)([A-Za-z])\d*$", batch)
-
-        month_map_taisho = {
-            "N": 1, "P": 2, "Q": 3, "R": 4, "S": 4, "T": 5, "X": 6,
-            "A": 7, "B": 8, "C": 9, "D": 10, "E": 11, "F": 12, "Y": 12, "Z": 12,
-            "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9
-        }
-
-        if match_taisho_year_prefix and int(match_taisho_year_prefix.group(1)) <= (curr_year - 2000):
-            y = 2000 + int(match_taisho_year_prefix.group(1))
-            m_char = match_taisho_year_prefix.group(3).upper()
-            month = month_map_taisho.get(m_char, int(match_taisho_year_prefix.group(2)) if match_taisho_year_prefix.group(2) != '0' else 12)
-            prod_date = f"{y}-{month:02d}"
-            # 针对 24 开头批次实物校准到期时间
-            exp_date = "2028-12" if batch == "246Y1" else None
-
-        elif match_taisho_5:
-            y_char = int(match_taisho_5.group(1))
-            m_char = match_taisho_5.group(2).upper()
-            month = month_map_taisho.get(m_char)
-            if month:
-                y = base_decade + y_char
-                if y > curr_year: y -= 10
-                prod_date = f"{y}-{month:02d}"
 
 
     # =========================================================================
